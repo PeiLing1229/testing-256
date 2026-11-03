@@ -63,6 +63,24 @@ def fetch_posts(key):
     return rows
 
 
+def fetch_active_competitors(key):
+    """Return normalized (tracker, username) pairs for active competitors."""
+    url = f"{SUPABASE_URL}/rest/v1/competitors?select=username,tracker&active=is.true"
+    req = urllib.request.Request(url, headers={
+        "apikey": key, "Authorization": "Bearer " + key,
+    })
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        rows = json.loads(resp.read())
+    return {
+        (
+            str(r.get("tracker") or "IG").strip().upper(),
+            str(r.get("username") or "").strip().lower(),
+        )
+        for r in rows
+        if str(r.get("username") or "").strip()
+    }
+
+
 def normalize(r):
     post_id = str(r.get("post_id") or "").strip()
     if not post_id:
@@ -1104,9 +1122,22 @@ def main():
         print("ERROR: SUPABASE_URL is not set.")
         sys.exit(1)
 
+    print("Fetching active competitors from Supabase...")
+    active_competitors = fetch_active_competitors(svc)
+    print(f"  {len(active_competitors)} active competitors")
+
     print("Fetching posts from Supabase...")
     rows = fetch_posts(svc)
-    print(f"  {len(rows)} rows")
+    total_rows = len(rows)
+    rows = [
+        r for r in rows
+        if str(r.get("tracker") or "IG").strip().upper() != "IG"
+        or (
+            "IG",
+            str(r.get("competitor") or "").strip().lower(),
+        ) in active_competitors
+    ]
+    print(f"  {len(rows)} visible rows ({total_rows - len(rows)} hidden from inactive/missing competitors)")
     posts = [normalize(r) for r in rows]
     posts = [p for p in posts if p]
 
